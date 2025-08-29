@@ -16,8 +16,6 @@ from tqdm import tqdm
 from abc import ABC, abstractmethod
 from pathlib import Path
 from mluti_paths import MultiPathGenerator
-from method.mrrt import RRTEnvironment, rrt
-from method.rrt_star import rrt_star
 
 class Agent(ABC):
     """Base agent class"""
@@ -588,21 +586,6 @@ def view_distance_with_cosine(env, path_new,path_contrast):
 
     return [maxvalue]
 
-#------------------------------------
-    """
-    Multiple methods combined for similarity calculation: weighted average of distance and cosine similarity
-    """
-    # Calculate distance similarity
-    distance_similarity = similarity_path_one(path_new, path2)
-    
-    # Calculate cosine similarity
-    cosine_similarity = similarity_path_four(path_new, path2)
-    
-    # Combine two similarity measures
-    # Here we simply take the average, but you can adjust weights as needed
-    combined_score = (distance_similarity[0] + cosine_similarity[0]) / 2
-    
-    return combined_score,distance_similarity[1]+cosine_similarity[1]
 #----------------------------------------
 
 def distance(point1, point2):
@@ -744,17 +727,6 @@ def Evaluation_collision_with_human(path,simulator,agent_goals):
     return collision_count, collision_step, collision_position, human_path, conflict, reward
 #-------------------------------------------------------------------------------        
 
-def generate_rrt_star_path(env, start=None, goal=None, max_iter=5000, goal_sample_rate=0.05, rewire_radius=3.0, seed=None):
-    """
-    Generate path from start to goal using RRT* in current discrete grid environment.
-    - env: Env instance (must contain width/height/obstacles/start/goal)
-    - start/goal: (x,y); defaults to env.start and env.goal[0]
-    Returns: path [(x,y), ...]; empty list if no solution
-    """
-    s = start if start is not None else env.start
-    g = goal if goal is not None else (env.goal[0] if isinstance(env.goal, (list, tuple)) else env.goal)
-    return rrt_star(env, s, g, max_iter=max_iter, goal_sample_rate=goal_sample_rate, rewire_radius=rewire_radius, seed=seed)
-
 def evaluation_a_star(args):
     i,agent_start,agent_goals,obstacles,size,num_humans,human_simulations,budget,alpha,gamma,epsilon,n_episode,human_start,human_goal = args
     env = Env(agent_start, agent_goals, obstacles, size)
@@ -766,7 +738,7 @@ def evaluation_a_star(args):
     path = a_star_agent.a_star_search(agent_start,agent_goals)
     collision_count_a_star, collision_step_a_star, collision_postion_a_star, a_star_human_path, conflict, reward_a_star = Evaluation_collision_with_human(path, simulator,agent_goals)
     a_star_success = 1 if (not conflict) and (path[-1] == agent_goals) else 0
-    if i % 20 == 0:
+    if i % 1 == 0:
         env.create_grid_map('result/mprrt/Map_{}/human_{}/a_star/a_star_path/a_star-path_al_{}_ga_{}_eps_{}_epis_{}_iter={}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=path, rows=size[0],cols=size[1])
     del env
     return {
@@ -799,9 +771,9 @@ def evaluation_mprl(args):
     # MPRL evaluation
     collision_count, collision_step, collision_postion, human_path, conflict, reward_mprl= Evaluation_collision_with_human(safe_path,simulator,agent_goals)
     mprl_success = 1 if (not conflict) and (safe_path[-1] == agent_goals) else 0
-    if i % 20 == 0:
+    if i % 1 == 0:
         env.create_grid_map('result/mprrt/Map_{}/human_{}/mprl/mprl_safe/mprl-path_al_{}_ga_{}_eps_{}_epis_{}_iter{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=safe_path, rows=size[0],cols=size[1])
-    if i % 20 == 0:
+    if i % 1 == 0:
         plt.figure(figsize=(10, 6))
         plt.plot(range(len(rewards_simulation)), rewards_simulation, '--', linewidth=2)
         plt.title('trian_alpha={}, gamma={}, epsilon={}, episode={}'.format(alpha,gamma,epsilon,n_episode))
@@ -826,9 +798,9 @@ def evaluation_mdp(args):
     Time = end_time - start_time
     collision_count_human, collision_step_human, collision_postion_human, human_path, conflict_human, reward_mdp = Evaluation_collision_with_human(classical_path, simulator,agent_goals)
     mdp_success = 1 if (not conflict_human) and (classical_path[-1] == agent_goals) else 0
-    if i % 20 == 0:
+    if i % 1 == 0:
         env.create_grid_map('result/mprrt/Map_{}/human_{}/mdp/mdp_path/mdp-path_al_{}_ga_{}_eps_{}_epis_{}_iter_{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=classical_path, rows=size[0],cols=size[1])
-    if i % 20 == 0:
+    if i % 1 == 0:
         plt.figure(figsize=(10, 6))
         plt.plot(range(len(reward_with_human)), reward_with_human, '--', linewidth=2)
         plt.title('trian_alpha={}, gamma={}, epsilon={}, episode={}'.format(alpha,gamma,epsilon,n_episode))
@@ -840,155 +812,6 @@ def evaluation_mdp(args):
     return {
        'mdp': (collision_count_human, mdp_success, reward_mdp, collision_step_human, Time)
     }
-
-def evaluation_mrrt(args):
-    """
-    MRRT algorithm evaluation function, following evaluation_a_star structure
-    """
-    i, agent_start, agent_goals, obstacles, size, num_humans, human_simulations, budget, alpha, gamma, epsilon, n_episode, human_start, human_goal = args
-    rrt_env = RRTEnvironment(agent_start, agent_goals, obstacles, size)
-    # Generate multiple paths
-    one_data = {}
-    N_PATHS = 400
-    MIN_PATHS = 300 # Minimum path count requirement
-    all_paths = []
-    attempt_count = 0
-    max_attempts = N_PATHS * 50000  # Significantly increase attempt count
-    sampling_strategies = ['quadrant','goal']  # Multiple sampling strategies
-    max_iter = 5000
-    
-    # Dynamic similarity threshold adjustment
-    base_similarity_threshold = 0.8
-    min_similarity_threshold = 0.75
-    start_time = time.time()
-    
-    # RRT parameters
-    while len(all_paths) < MIN_PATHS and attempt_count < max_attempts and (time.time()-start_time) < 660:
-        w_time = time.time()
-
-        strategy = random.choice(sampling_strategies)
-
-        path = rrt(rrt_env, agent_start, agent_goals, size, obstacles, max_iter, strategy)
-        
-        if path:
-            # Dynamic similarity threshold adjustment
-            current_threshold = max(min_similarity_threshold,  base_similarity_threshold - len(all_paths)*0.02)
-            
-            # Filter similar paths
-            is_similar = False
-            for existing in all_paths:
-                if jaccard_similarity(path, existing) > current_threshold:
-                    is_similar = True
-                    break
-            
-            if not is_similar:
-                all_paths.append(path)
-        
-        attempt_count += 1
-        # Risk calculation and path selection
-    all_paths = [a for a in all_paths if len(a)<=budget]
-    tim = time.time() - start_time
-    mrrt_human_1 = collision_human(rrt_env, all_paths, i, human_start, human_goal, tim, human_number=1, budget=budget, human_simulations=human_simulations, agent_goal=agent_goals, size=size)
-    mrrt_human_2 = collision_human(rrt_env, all_paths, i, human_start, human_goal, tim, human_number=2, budget=budget, human_simulations=human_simulations, agent_goal=agent_goals, size=size)
-    mrrt_human_4 = collision_human(rrt_env, all_paths, i, human_start, human_goal, tim, human_number=4, budget=budget, human_simulations=human_simulations, agent_goal=agent_goals, size=size)     
-    mrrt_human_6 = collision_human(rrt_env, all_paths, i, human_start, human_goal, tim, human_number=6, budget=budget, human_simulations=human_simulations, agent_goal=agent_goals, size=size)
-    mrrt_human_8 = collision_human(rrt_env, all_paths, i, human_start, human_goal, tim, human_number=8, budget=budget, human_simulations=human_simulations, agent_goal=agent_goals, size=size)
-    mrrt_human_10 = collision_human(rrt_env, all_paths, i, human_start, human_goal, tim, human_number=10, budget=budget, human_simulations=human_simulations, agent_goal=agent_goals, size=size)
-    one_data.update(mrrt_human_1)
-    one_data.update(mrrt_human_2)
-    one_data.update(mrrt_human_4)
-    one_data.update(mrrt_human_6)
-    one_data.update(mrrt_human_8)
-    one_data.update(mrrt_human_10)
-    del rrt_env
-
-    return one_data
-
-def evaluation_rrt(args):
-    """
-    RRT algorithm evaluation function, following evaluation_a_star structure
-    """
-    i,agent_start,agent_goals,obstacles,size,num_humans,human_simulations,budget,alpha,gamma,epsilon,n_episode,human_start,human_goal = args
-    env = Env(agent_start, agent_goals, obstacles, size)
-    simulator = MultiHumanSimulator(env, human_start, human_goal, n_humans=num_humans)
-    start_time = time.time()
-
-    rrt_path = rrt_star(env, agent_start, agent_goals, max_iter=5000, goal_sample_rate=0.1, rewire_radius=3.0)
-    end_time = time.time()
-    Time = end_time - start_time
-    collision_count_human, collision_step_human, collision_postion_human, human_path, conflict_human, reward_rrt = Evaluation_collision_with_human(rrt_path, simulator,agent_goals)
-    rrt_success = 1 if (not conflict_human) and (rrt_path[-1] == agent_goals) else 0
-    if i % 20 == 0:
-        env.create_grid_map('result/mprrt/Map_{}/human_{}/rrt/rrt_path/rrt-path_al_{}_ga_{}_eps_{}_epis_{}_iter_{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=rrt_path, rows=size[0],cols=size[1])
-    del env
-    return {
-       'rrt': (collision_count_human, rrt_success, reward_rrt, collision_step_human, Time)
-    }
-def plot_collision_bar_chart(position_counts, env):
-    """
-    Plot 3D bar chart of collision positions
-    :param position_counts: Count for each collision position
-    :param env: Environment object, must contain width and height information
-    """
-    # Create collision count matrix with same size as environment
-    x = np.arange(env.width)
-    y = np.arange(env.height)
-    X, Y = np.meshgrid(x, y)
-    Z = np.zeros_like(X)  # Generate Z-axis 0 matrix
-
-    # Fill collision counts to Z-axis
-    for position, count in position_counts.items():
-        x, y = position  # Unpack position coordinates
-        Z[y, x] = count  # Put count value to corresponding Z-axis position
-
-    # Create 3D plot
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Get bar chart vertex coordinates
-    xpos = X.flatten()
-    ypos = Y.flatten()
-    zpos = Z.flatten()
-
-    # Draw 3D bar chart, ensure bars touch the plane
-    ax.bar3d(xpos, ypos, np.zeros_like(zpos), 1, 1, zpos, shade=True)
-
-    ax.set_title('3D Bar Chart of Collision Positions')
-    ax.set_xlabel('Environment Width')
-    ax.set_ylabel('Environment Height')
-    ax.set_zlabel('Collision Count')
-    ax.set_xticks(np.arange(env.width))
-    ax.set_yticks(np.arange(env.height))
-    ax.set_xticklabels(np.arange(env.width), rotation=45)  # Optional rotated labels
-    ax.set_yticklabels(np.arange(env.height), rotation=45)  # Optional rotated labels
-    plt.show()
-
-# record the data
-def save_data(data,filename):
-    name = filename + '.npy'
-    np.save('{}'.format(name),data,allow_pickle = True)
-
-def load_data(filename):
-    name = filename+'.npy'
-    return np.load('{}'.format(filename),allow_pickle = False)
-def save_dict(data,filename):
-    with open(filename+'.pkl','wb') as f:
-        pickle.dump(data,f)
-
-def load_dict(filename):
-    with open(filename+'.pkl','rb') as f:
-        data = pickle.load(f)
-    return data
-#--------------------------------
-def save_as_json(Q_dict,filename,max_depth=1):
-
-    with open(filename, 'w') as f:
-        f.write(jsonpickle.encode(Q_dict,indent=4,separators=(', ', ': '),max_depth=max_depth))
-
-def load_from_json(filename):
-    with open(filename, 'r') as f:
-        json_str = f.read()   
-    return jsonpickle.decode(json_str)
 
 def parse_coordinates(arg):
     # Remove parentheses and spaces, split by comma
@@ -1032,7 +855,8 @@ def count_txt_files(directory_path):
     except Exception as e:
         print(f"Error occurred: {str(e)}")
         return 0
-    
+
+# multi-processing(8 kernel)
 def data_processing(name,budget):
     col_number = []
     success_list = []
@@ -1045,202 +869,51 @@ def data_processing(name,budget):
     elif name == 'mprl':
         with multiprocessing.Pool(8) as pool:
             results = list(tqdm(pool.imap_unordered(evaluation_mprl,args),total=simulation_times))
-    elif name == 'mrrt':
-        with multiprocessing.Pool(8) as pool:
-            results = list(tqdm(pool.imap_unordered(evaluation_mrrt,args),total=simulation_times))
-    elif name == 'rrt':
-        with multiprocessing.Pool(8) as pool:
-            results = list(tqdm(pool.imap_unordered(evaluation_rrt,args),total=simulation_times))
     else :
         with multiprocessing.Pool(8) as pool:
             results = list(tqdm(pool.imap_unordered(evaluation_mdp,args),total=simulation_times))
+    for result in results:
+        col, success, reward, col_steps, Time = result[name]
+        col_number.append(col)
+        success_list.append(success)
+        reward_list.append(reward)
+        Time_list.append(Time)
+        if col_steps:
+            for step in col_steps:
+                middle_dict[step] += 1
+    number = count_txt_files('result/mprrt/Map_{}/human_{}/{}/{}_txt'.format(size[0],num_humans,name,name))+1
+    filename = 'result/mprrt/Map_{}/human_{}/{}/{}_result/data_{}'.format(size[0],num_humans,name,name,number)
+    with open(filename, 'w', encoding='utf-8') as f:
+        # Write conflict rate, success rate and reward
+        f.write("{}成功率:{}\n".format(name,success_list))
+        f.write("{}成功率均值:{}\n".format(name,np.mean(success_list)))
+        f.write("{}成功率标准差:{}\n".format(name,np.std(success_list)))
     
-    if name == 'mrrt':
-        for key in results[0].keys():
-            
-            col_number = []
-            success_list = []
-            reward_list = []
-            Time_list = []
-            middle_dict = {step:0 for step in range(1,budget+1)}
-            for result in results:
-                col, success, reward, col_steps, Time = result[key]
-                col_number.append(col)
-                success_list.append(success)
-                reward_list.append(reward)
-                Time_list.append(Time)
-                if col_steps:
-                    for step in col_steps:
-                        middle_dict[step] += 1
-            number = count_txt_files('result/mprrt/Map_{}/human_{}/{}/{}_txt'.format(size[0],key,name,name))+1
-            filename = 'result/mprrt/Map_{}/human_{}/{}/{}_result/data_{}'.format(size[0],key,name,name,number)
-            with open(filename, 'w', encoding='utf-8') as f:
-                # Write conflict rate, success rate and reward
-                f.write("{}成功率:{}\n".format(name,success_list))
-                f.write("{}成功率均值:{}\n".format(name,np.mean(success_list)))
-                f.write("{}成功率标准差:{}\n".format(name,np.std(success_list)))
-            
-                f.write("{}冲突率:{}\n".format(name,col_number))
-                f.write("{}冲突率均值:{}\n".format(name,np.mean(col_number)))
-                f.write("{}冲突率标准差:{}\n".format(name,np.std(col_number)))  
-                
-                f.write("{}回报:{}\n".format(name,reward_list))
-                f.write("{}回报均值:{}\n".format(name,np.mean(reward_list)))
-                f.write("{}回报标准差:{}\n".format(name,np.std(reward_list)))
-
-                f.write("{}时间:{}\n".format(name,Time_list))
-                f.write("{}时间均值:{}\n".format(name,np.mean(Time_list)))
-                f.write("{}时间标准差:{}\n".format(name,np.std(Time_list)))
-            x_values = list(middle_dict.keys())
-            y_values = list(middle_dict.values())
-            save_plot_data_as_txt(x_values,y_values,'result/mprrt/Map_{}/human_{}/{}/{}_txt/conflict_{}_{}.txt'.format(size[0],key,name,name,name,number))
-            plt.rcParams['figure.figsize'] = (10, 6)
-            plt.plot(x_values, y_values, color='blue', marker='o', label=name)
-            plt.title('conflict')
-            plt.xticks(range(0,budget+1,1))
-            plt.yticks(range(0,10,2))
-            plt.xlabel('step')
-            plt.ylabel('conflict numbers')
-            plt.legend()
-            plt.savefig('result/mprrt/Map_{}/human_{}/{}/{}_picture/conflict_{}_{}.pdf'.format(size[0],key,name,name,name,number),dpi=300,bbox_inches='tight')
-            plt.show(block=False)
-            plt.pause(2)
-            plt.close()
-
-    else:
-        for result in results:
-            col, success, reward, col_steps, Time = result[name]
-            col_number.append(col)
-            success_list.append(success)
-            reward_list.append(reward)
-            Time_list.append(Time)
-            if col_steps:
-                for step in col_steps:
-                    middle_dict[step] += 1
-        number = count_txt_files('result/mprrt/Map_{}/human_{}/{}/{}_txt'.format(size[0],num_humans,name,name))+1
-        filename = 'result/mprrt/Map_{}/human_{}/{}/{}_result/data_{}'.format(size[0],num_humans,name,name,number)
-        with open(filename, 'w', encoding='utf-8') as f:
-            # Write conflict rate, success rate and reward
-            f.write("{}成功率:{}\n".format(name,success_list))
-            f.write("{}成功率均值:{}\n".format(name,np.mean(success_list)))
-            f.write("{}成功率标准差:{}\n".format(name,np.std(success_list)))
+        f.write("{}冲突率:{}\n".format(name,col_number))
+        f.write("{}冲突率均值:{}\n".format(name,np.mean(col_number)))
+        f.write("{}冲突率标准差:{}\n".format(name,np.std(col_number)))  
         
-            f.write("{}冲突率:{}\n".format(name,col_number))
-            f.write("{}冲突率均值:{}\n".format(name,np.mean(col_number)))
-            f.write("{}冲突率标准差:{}\n".format(name,np.std(col_number)))  
-            
-            f.write("{}回报:{}\n".format(name,reward_list))
-            f.write("{}回报均值:{}\n".format(name,np.mean(reward_list)))
-            f.write("{}回报标准差:{}\n".format(name,np.std(reward_list)))
+        f.write("{}回报:{}\n".format(name,reward_list))
+        f.write("{}回报均值:{}\n".format(name,np.mean(reward_list)))
+        f.write("{}回报标准差:{}\n".format(name,np.std(reward_list)))
 
-            f.write("{}时间:{}\n".format(name,Time_list))
-            f.write("{}时间均值:{}\n".format(name,np.mean(Time_list)))
-            f.write("{}时间标准差:{}\n".format(name,np.std(Time_list)))
-        x_values = list(middle_dict.keys())
-        y_values = list(middle_dict.values())
-        save_plot_data_as_txt(x_values,y_values,'result/mprrt/Map_{}/human_{}/{}/{}_txt/conflict_{}_{}.txt'.format(size[0],num_humans,name,name,name,number))
-        plt.rcParams['figure.figsize'] = (10, 6)
-        plt.plot(x_values, y_values, color='blue', marker='o', label=name)
-        plt.title('conflict')
-        plt.xticks(range(0,budget+1,1))
-        plt.xlabel('step')
-        plt.ylabel('conflict numbers')
-        plt.legend()
-        plt.savefig('result/mprrt/Map_{}/human_{}/{}/{}_picture/conflict_{}_{}.pdf'.format(size[0],num_humans,name,name,name,number),dpi=300,bbox_inches='tight')
-        plt.show(block=False)
-        plt.pause(2)
-        plt.close()
-
-def collision_human(rrt_env, all_paths, i, human_start, human_goal, tim, human_number=0, budget=0, human_simulations=10, agent_goal = None, size=(10,10)):
-    start_time = time.time()
-    simulator = MultiHumanSimulator(rrt_env, human_start, human_goal, n_humans=human_number)
-    all_human_paths = simulator.simulate(num_sims=human_simulations)
-    risk_calc = RiskCalculator(all_human_paths, total_steps=budget, num_sims=human_simulations, show=False)
-    risk_map = risk_calc.calculate_risk(rrt_env)
-    rrt_m_path = safer_path(all_paths, risk_map)
-    end_time = time.time()
-    Time = tim + end_time - start_time
-    collision_count_mrrt, collision_step_mrrt, collision_postion_rrt, rrt_human_path, conflict, reward_mrrt = Evaluation_collision_with_human(rrt_m_path, simulator, agent_goal)
-    mrrt_success = 1 if (not conflict) and (rrt_m_path[-1] == agent_goal) else 0
-    if i % 20 == 0:
-        rrt_env.create_grid_map('result/mprrt/Map_{}/human_{}/mrrt/mrrt_path/mrrt-path_iter={}.pdf'.format(size[0], human_number, i), path=rrt_m_path, rows=size[0], cols=size[1])
-    return {human_number: (collision_count_mrrt, mrrt_success, reward_mrrt, collision_step_mrrt, Time)}
-
-def plot_three_txt_files(file1, file2, file3, 
-                         xlabel='step', ylabel='conflict numbers',
-                         title='Three Method Comparison',
-                         save_path=True):
-    """
-    Load and plot data from three text files
-    
-    Parameters:
-    file1, file2, file3 (str): Three text file paths
-    xlabel (str): X-axis label
-    ylabel (str): Y-axis label
-    title (str): Chart title
-    save_path (str): Image save path (optional)
-    
-    Features:
-    1. Auto-detect single or double column data format
-    2. Handle different data separators
-    3. Smart color assignment
-    4. Error handling and prompts
-    """
-    plt.figure(figsize=(10, 6))
-    
-    # Define plot style configuration
-    styles = [
-        {'color': '#2ca02c', 'linestyle': '-', 'marker': 'o', 'label': 'A*'},
-        {'color': '#1f77b4', 'linestyle': '--', 'marker': 's', 'label': 'MPRL'},
-        {'color': '#d62728', 'linestyle': '-.', 'marker': '^', 'label': 'MDP'}
-    ]
-    
-    # Define file list and corresponding styles
-    files = [file1, file2, file3]
-    
-    for i, file in enumerate(files):
-        try:
-            # Auto-detect data format
-            data = np.genfromtxt(file, delimiter=None)
-            
-            # Handle single column data
-            if data.ndim == 1:
-                x = np.arange(len(data))
-                y = data
-            elif data.shape[1] == 2:
-                x = data[1:, 0]
-                y = data[1:, 1]
-            else:
-                print(f"File {file} contains unsupported {data.shape[1]} column data, skipped")
-                continue
-                
-            # Plot data
-            plt.plot(x, y, 
-                     linewidth=2,
-                     alpha=0.8,**styles[i],
-                     )   
-        except Exception as e:
-            print(f"Error loading file {file}: {str(e)}")
-            continue
-    
-    # Chart decoration
-    plt.xlabel(xlabel, fontsize=12)
-    plt.ylabel(ylabel, fontsize=12)
-    plt.title(title, fontsize=14, pad=20)
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.legend(fontsize=10)
-    
-    # Auto-adjust ticks
-    plt.tick_params(axis='both', which='major', labelsize=10)
-    plt.tight_layout()
-    number = count_txt_files('result/output_file/Map_{}/human_{}'.format(size[0],num_humans))+1
-    name = 'result/output_file/Map_{}/human_{}/three_mothed_{}.pdf'.format(size[0],num_humans,number)
-    # Save or display
-    if save_path:
-        plt.savefig(name,dpi=300,bbox_inches='tight')
-        print(f"Chart saved to: {name}")
-    else:
-        plt.show()
+        f.write("{}时间:{}\n".format(name,Time_list))
+        f.write("{}时间均值:{}\n".format(name,np.mean(Time_list)))
+        f.write("{}时间标准差:{}\n".format(name,np.std(Time_list)))
+    x_values = list(middle_dict.keys())
+    y_values = list(middle_dict.values())
+    save_plot_data_as_txt(x_values,y_values,'result/mprrt/Map_{}/human_{}/{}/{}_txt/conflict_{}_{}.txt'.format(size[0],num_humans,name,name,name,number))
+    plt.rcParams['figure.figsize'] = (10, 6)
+    plt.plot(x_values, y_values, color='blue', marker='o', label=name)
+    plt.title('conflict')
+    plt.xticks(range(0,budget+1,1))
+    plt.xlabel('step')
+    plt.ylabel('conflict numbers')
+    plt.legend()
+    plt.savefig('result/mprrt/Map_{}/human_{}/{}/{}_picture/conflict_{}_{}.pdf'.format(size[0],num_humans,name,name,name,number),dpi=300,bbox_inches='tight')
+    plt.show(block=False)
+    plt.pause(2)
+    plt.close()
 
 # --------
 if __name__ == "__main__":
@@ -1251,7 +924,7 @@ if __name__ == "__main__":
     parser.add_argument('--episode', type=int, default=4000, help='number of episodes')
     parser.add_argument('--simulation', type=int, default=100, help='number of simulations for evaluation')
     parser.add_argument('--human_simulations', type=int, default=2000, help='the number of human simulations')
-    parser.add_argument('--budget', type=int, default=80, help='number of simulations for evaluation')
+    parser.add_argument('--budget', type=int, default=20, help='number of simulations for evaluation')
     parser.add_argument('--num_humans', type=int, default=1, help='the number of human')
     parser.add_argument('--param', type=str, default='yaml/10x10_obst_rrt.yaml', help='the information of map')
     
@@ -1265,6 +938,7 @@ if __name__ == "__main__":
     budget = args.budget
     num_humans = args.num_humans
     
+    # the YAML file(./yaml/*.yaml) contains the information of map, agent and human.
     with open(args.param, 'r') as param_file:
         try:
             param = yaml.load(param_file, Loader=yaml.FullLoader)
@@ -1274,6 +948,11 @@ if __name__ == "__main__":
     agent_start = tuple(param['agents']['start'])
     size = tuple(param['map']['dimensions'])
     obstacles =set(param['map']['obstacles'])
+
+    Number_human = len(param['humans'])
+    if num_humans > Number_human:
+        print('The number of humans in the YAML file is less than the number of humans in the parameter')
+        exit()
 
     human_start = []
     human_goal = []
@@ -1287,8 +966,13 @@ if __name__ == "__main__":
     print(human_start)
     
     #parameter
-    args = [(i,agent_start,agent_goal,obstacles,size,num_humans,human_simulations,budget,alpha,gamma,epsilon,n_episode,human_start,human_goal) for i in range(1,simulation_times+1)]
-
-
+    args = (1,agent_start,agent_goal,obstacles,size,num_humans,human_simulations,budget,alpha,gamma,epsilon,n_episode,human_start,human_goal)
+    a_star = evaluation_a_star(args)
+    mdp = evaluation_mdp(args)
+    mprl = evaluation_mprl(args)
+    print("a_star",a_star)
+    print("mdp",mdp)
+    print("mprl",mprl)    
+    
     print('The algorithm is done! Thanks for your patience!')
     
