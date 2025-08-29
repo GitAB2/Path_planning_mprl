@@ -739,7 +739,7 @@ def evaluation_a_star(args):
     collision_count_a_star, collision_step_a_star, collision_postion_a_star, a_star_human_path, conflict, reward_a_star = Evaluation_collision_with_human(path, simulator,agent_goals)
     a_star_success = 1 if (not conflict) and (path[-1] == agent_goals) else 0
     if i % 1 == 0:
-        env.create_grid_map('result/mprrt/Map_{}/human_{}/a_star/a_star_path/a_star-path_al_{}_ga_{}_eps_{}_epis_{}_iter={}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=path, rows=size[0],cols=size[1])
+        env.create_grid_map('result/mprl/Map_{}/human_{}/a_star/a_star_path/a_star-path_al_{}_ga_{}_eps_{}_epis_{}_iter={}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=path, rows=size[0],cols=size[1])
     del env
     return {
         'a_star': (collision_count_a_star, a_star_success, reward_a_star, collision_step_a_star, Time)
@@ -772,14 +772,14 @@ def evaluation_mprl(args):
     collision_count, collision_step, collision_postion, human_path, conflict, reward_mprl= Evaluation_collision_with_human(safe_path,simulator,agent_goals)
     mprl_success = 1 if (not conflict) and (safe_path[-1] == agent_goals) else 0
     if i % 1 == 0:
-        env.create_grid_map('result/mprrt/Map_{}/human_{}/mprl/mprl_safe/mprl-path_al_{}_ga_{}_eps_{}_epis_{}_iter{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=safe_path, rows=size[0],cols=size[1])
+        env.create_grid_map('result/mprl/Map_{}/human_{}/mprl/mprl_safe/mprl-path_al_{}_ga_{}_eps_{}_epis_{}_iter{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=safe_path, rows=size[0],cols=size[1])
     if i % 1 == 0:
         plt.figure(figsize=(10, 6))
         plt.plot(range(len(rewards_simulation)), rewards_simulation, '--', linewidth=2)
         plt.title('trian_alpha={}, gamma={}, epsilon={}, episode={}'.format(alpha,gamma,epsilon,n_episode))
         plt.xlabel('episode')
         plt.ylabel('Reward')
-        plt.savefig('result/mprrt/Map_{}/human_{}/mprl/mprl_train/train-reward_al_{}_ga_{}_eps_{}_epi_{}_iter_{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i),dpi=300,bbox_inches='tight')
+        plt.savefig('result/mprl/Map_{}/human_{}/mprl/mprl_train/train-reward_al_{}_ga_{}_eps_{}_epi_{}_iter_{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i),dpi=300,bbox_inches='tight')
         plt.close()
     del env
     return {
@@ -799,14 +799,14 @@ def evaluation_mdp(args):
     collision_count_human, collision_step_human, collision_postion_human, human_path, conflict_human, reward_mdp = Evaluation_collision_with_human(classical_path, simulator,agent_goals)
     mdp_success = 1 if (not conflict_human) and (classical_path[-1] == agent_goals) else 0
     if i % 1 == 0:
-        env.create_grid_map('result/mprrt/Map_{}/human_{}/mdp/mdp_path/mdp-path_al_{}_ga_{}_eps_{}_epis_{}_iter_{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=classical_path, rows=size[0],cols=size[1])
+        env.create_grid_map('result/mprl/Map_{}/human_{}/mdp/mdp_path/mdp-path_al_{}_ga_{}_eps_{}_epis_{}_iter_{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i), path=classical_path, rows=size[0],cols=size[1])
     if i % 1 == 0:
         plt.figure(figsize=(10, 6))
         plt.plot(range(len(reward_with_human)), reward_with_human, '--', linewidth=2)
         plt.title('trian_alpha={}, gamma={}, epsilon={}, episode={}'.format(alpha,gamma,epsilon,n_episode))
         plt.xlabel('episode')
         plt.ylabel('Reward')
-        plt.savefig('result/mprrt/Map_{}/human_{}/mdp/mdp_train/train_reward_al_{}_ga_{}_eps_{}_epis_{}_iter_{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i),dpi=300,bbox_inches='tight')
+        plt.savefig('result/mprl/Map_{}/human_{}/mdp/mdp_train/train_reward_al_{}_ga_{}_eps_{}_epis_{}_iter_{}.pdf'.format(size[0],num_humans,alpha,gamma,epsilon,n_episode,i),dpi=300,bbox_inches='tight')
         plt.close()
     del env
     return {
@@ -881,8 +881,8 @@ def data_processing(name,budget):
         if col_steps:
             for step in col_steps:
                 middle_dict[step] += 1
-    number = count_txt_files('result/mprrt/Map_{}/human_{}/{}/{}_txt'.format(size[0],num_humans,name,name))+1
-    filename = 'result/mprrt/Map_{}/human_{}/{}/{}_result/data_{}'.format(size[0],num_humans,name,name,number)
+    number = count_txt_files('result/mprl/Map_{}/human_{}/{}/{}_txt'.format(size[0],num_humans,name,name))+1
+    filename = 'result/mprl/Map_{}/human_{}/{}/{}_result/data_{}'.format(size[0],num_humans,name,name,number)
     with open(filename, 'w', encoding='utf-8') as f:
         # Write conflict rate, success rate and reward
         f.write("{}成功率:{}\n".format(name,success_list))
@@ -902,7 +902,7 @@ def data_processing(name,budget):
         f.write("{}时间标准差:{}\n".format(name,np.std(Time_list)))
     x_values = list(middle_dict.keys())
     y_values = list(middle_dict.values())
-    save_plot_data_as_txt(x_values,y_values,'result/mprrt/Map_{}/human_{}/{}/{}_txt/conflict_{}_{}.txt'.format(size[0],num_humans,name,name,name,number))
+    save_plot_data_as_txt(x_values,y_values,'result/mprl/Map_{}/human_{}/{}/{}_txt/conflict_{}_{}.txt'.format(size[0],num_humans,name,name,name,number))
     plt.rcParams['figure.figsize'] = (10, 6)
     plt.plot(x_values, y_values, color='blue', marker='o', label=name)
     plt.title('conflict')
@@ -910,7 +910,7 @@ def data_processing(name,budget):
     plt.xlabel('step')
     plt.ylabel('conflict numbers')
     plt.legend()
-    plt.savefig('result/mprrt/Map_{}/human_{}/{}/{}_picture/conflict_{}_{}.pdf'.format(size[0],num_humans,name,name,name,number),dpi=300,bbox_inches='tight')
+    plt.savefig('result/mprl/Map_{}/human_{}/{}/{}_picture/conflict_{}_{}.pdf'.format(size[0],num_humans,name,name,name,number),dpi=300,bbox_inches='tight')
     plt.show(block=False)
     plt.pause(2)
     plt.close()
@@ -970,6 +970,8 @@ if __name__ == "__main__":
     a_star = evaluation_a_star(args)
     mdp = evaluation_mdp(args)
     mprl = evaluation_mprl(args)
+
+    #data in ./result/
     print("a_star",a_star)
     print("mdp",mdp)
     print("mprl",mprl)    
